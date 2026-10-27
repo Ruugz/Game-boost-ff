@@ -1,0 +1,57 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ekstrak zip (jika proyek di-upload sebagai .zip)
+        run: |
+          shopt -s nullglob
+          for z in *.zip; do
+            echo "Ekstrak $z"
+            unzip -oq "$z" -d "_zip_$(basename "$z" .zip)"
+          done
+
+      - name: Cari folder proyek
+        id: p
+        run: |
+          f=$(find . \( -name settings.gradle.kts -o -name settings.gradle \) -not -path "./.git/*" -not -path "*/build/*" | head -n1)
+          if [ -z "$f" ]; then
+            echo "settings.gradle(.kts) tidak ditemukan. Isi repo:"
+            find . -not -path "./.git/*" | head -50
+            exit 1
+          fi
+          d=$(dirname "$f")
+          echo "Proyek ada di: $d"
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        working-directory: ${{ steps.p.outputs.dir }}
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: "**/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error
